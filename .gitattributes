@@ -3,3 +3,4 @@
 Dockerfile text eol=lf
 *.yml text eol=lf
 *.sql text eol=lf
+.env.example text eol=lf

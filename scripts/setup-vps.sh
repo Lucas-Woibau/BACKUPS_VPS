@@ -23,6 +23,7 @@ command -v docker >/dev/null || die "Docker não encontrado."
 [ -f docker-compose.prod.yml ] || die "docker-compose.prod.yml não está nesta pasta (rode o workflow do GitHub uma vez ou copie o arquivo)."
 
 set_env() { # set_env CHAVE valor
+  [ -s .env ] && [ -n "$(tail -c1 .env)" ] && echo >> .env   # garante quebra de linha no fim antes de anexar
   if grep -qE "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi
 }
 
