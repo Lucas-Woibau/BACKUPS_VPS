@@ -1,0 +1,17 @@
+# Caddy no HOST como reverse proxy com HTTPS automático (Let's Encrypt).
+# apt install caddy ; copie para /etc/caddy/Caddyfile ; systemctl reload caddy
+# No .env: SESSION_COOKIE_SECURE=true e TRUST_PROXY_HEADERS=true ; docker compose up -d
+#
+# Sem domínio? Não exponha o painel: use túnel SSH (ssh -L 8080:127.0.0.1:8080 usuario@vps) ou Tailscale.
+
+backup.seudominio.com.br {
+	encode gzip
+
+	# Opcional: liberar só IPs conhecidos
+	# @blocked not remote_ip 203.0.113.10/32
+	# respond @blocked 403
+
+	header Strict-Transport-Security "max-age=31536000"
+
+	reverse_proxy 127.0.0.1:8080
+}

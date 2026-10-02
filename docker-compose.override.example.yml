@@ -1,0 +1,33 @@
+# Copie para docker-compose.override.yml (ignorado pelo Git) e ajuste.
+# O Compose aplica o override automaticamente em `docker compose up -d`.
+#
+# Caso 1 — bancos em OUTROS projetos Docker: conecte o backup manager às redes desses projetos
+# para usar o nome do serviço/container como host (ex.: host = "mysql", porta 3306).
+# Descubra as redes com:  docker network ls   e   docker inspect <container> --format '{{json .NetworkSettings.Networks}}'
+# Isto NÃO altera os outros projetos; apenas adiciona este container às redes existentes.
+
+services:
+  app:
+    networks:
+      - default
+      - loja_default
+      - crm_backend
+
+networks:
+  loja_default:
+    external: true
+  crm_backend:
+    external: true
+
+# Caso 2 — alternativa para bancos no host que escutam só em 127.0.0.1:
+# usar a rede do host (o painel continua só em 127.0.0.1 via BIND do Kestrel).
+# Remova "ports"/"extra_hosts" e use host = 127.0.0.1 nas conexões.
+#
+# services:
+#   app:
+#     network_mode: host
+#     ports: !reset []
+#     extra_hosts: !reset []
+#     environment:
+#       ASPNETCORE_URLS: http://127.0.0.1:8080
+#       HOST_GATEWAY_NAME: 127.0.0.1

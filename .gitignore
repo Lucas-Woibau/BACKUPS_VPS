@@ -1,0 +1,28 @@
+# Segredos e dados de execução — NUNCA versionar
+.env
+.env.*
+!.env.example
+data/
+backups/
+rclone/
+mssql-backups/
+*.conf
+!deploy/nginx/*.conf
+secrets/
+*.age
+*.key
+age-key*.txt
+docker-compose.override.yml
+
+# Desenvolvimento local
+.dev/
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+TestResults/
+*.swp
+.idea/
+.vscode/

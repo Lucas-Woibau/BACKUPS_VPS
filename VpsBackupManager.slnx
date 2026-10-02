@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VpsBackupManager/VpsBackupManager.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VpsBackupManager.Tests/VpsBackupManager.Tests.csproj" />
+  </Folder>
+</Solution>

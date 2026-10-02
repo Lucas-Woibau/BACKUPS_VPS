@@ -1,0 +1,59 @@
+# Produção na VPS (imagem publicada pelo GitHub Actions em ghcr.io).
+# Primeira vez: sudo ./scripts/setup-vps.sh  (preenche o .env com redes/pastas dos bancos existentes)
+# Depois, cada push na branch master faz build + deploy automático (.github/workflows/deploy.yml).
+name: vps-backup-manager
+
+services:
+  app:
+    image: ghcr.io/lucas-woibau/vps-backup-manager:${IMAGE_TAG:-latest}
+    container_name: vps_backup_manager
+    restart: unless-stopped
+    # Mesmo UID do usuário "mssql" (10001): o app consegue ler e apagar os .bak que o SQL Server
+    # grava na pasta de backup dos bancos, sem dar acesso extra aos containers de banco.
+    user: "10001:10001"
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /data
+      BACKUP_ROOT: /backups
+      RCLONE_CONFIG: /config/rclone/rclone.conf
+    # Somente localhost da VPS (a porta 8080 já é usada pelo bibliotrack_api).
+    # Acesso: ssh -L 8095:127.0.0.1:8095 root@IP_DA_VPS  →  http://localhost:8095
+    ports:
+      - "127.0.0.1:${APP_PORT:-8095}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/data
+      - ./backups:/backups
+      - ./rclone:/config/rclone
+      # Pasta /var/opt/mssql/backup de cada SQL Server (dentro do volume de dados dele), vista pelo host.
+      # O SQL Server grava o .bak ali; o backup manager lê, compacta, envia ao Drive e apaga.
+      - ${MYSEEDS_BACKUP_DIR:?rode scripts/setup-vps.sh}:/mssql/myseeds
+      - ${BIBLIOTRACK_BACKUP_DIR:?rode scripts/setup-vps.sh}:/mssql/bibliotrack
+    networks:
+      - default
+      - myseeds_net
+      - bibliotrack_net
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+# Redes dos projetos existentes (o app entra nelas para falar com myseeds_db / bibliotrack_db
+# pelo nome do container, sem publicar a porta 1433). Os outros projetos não são alterados.
+networks:
+  myseeds_net:
+    external: true
+    name: ${MYSEEDS_NETWORK:?rode scripts/setup-vps.sh}
+  bibliotrack_net:
+    external: true
+    name: ${BIBLIOTRACK_NETWORK:?rode scripts/setup-vps.sh}

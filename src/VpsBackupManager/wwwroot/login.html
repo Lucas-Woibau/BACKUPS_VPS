@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entrar · VPS Backup Manager</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/login.js"></script>
+</head>
+<body>
+  <div class="auth">
+    <form class="card" id="login-form" autocomplete="on">
+      <h1>VPS Backup Manager</h1>
+      <p class="muted">Entre com sua conta de administrador.</p>
+      <div id="msg"></div>
+      <div class="field">
+        <label for="username">Usuário</label>
+        <input type="text" id="username" name="username" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="password">Senha</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
+      </div>
+      <button class="primary" type="submit" id="submit">Entrar</button>
+    </form>
+  </div>
+</body>
+</html>

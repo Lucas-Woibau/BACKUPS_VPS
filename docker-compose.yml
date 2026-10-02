@@ -1,0 +1,74 @@
+name: vps-backup-manager
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        PG_CLIENT_VERSION: ${PG_CLIENT_VERSION:-18}
+        MYSQL_CLIENT_FLAVOR: ${MYSQL_CLIENT_FLAVOR:-mariadb}
+    image: vps-backup-manager:local
+    container_name: vps-backup-manager
+    # Volta sozinho após reboot da VPS (o serviço Docker inicia no boot).
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      BACKUP_ROOT: /backups
+      RCLONE_CONFIG: /config/rclone/rclone.conf
+    # Por padrão o painel escuta SOMENTE em 127.0.0.1 da VPS. Acesse por túnel SSH, VPN (Tailscale)
+    # ou reverse proxy com HTTPS (deploy/). Não troque para 0.0.0.0 sem proxy + firewall.
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-8080}:8080"
+    # Permite alcançar bancos instalados diretamente no host via "host.docker.internal".
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./data:/data                  # SQLite (config + histórico), logs, token de primeiro acesso
+      - ./backups:/backups            # área temporária de trabalho + cópias locais opcionais
+      - ./rclone:/config/rclone       # rclone.conf (token do Google Drive) — precisa ser gravável
+      # SQL Server: pasta compartilhada onde o SQL Server grava o .bak (monte a MESMA pasta do host no
+      # container do SQL Server em /var/opt/mssql/backup). Criada pelo install.sh com as permissões corretas.
+      - ./mssql-backups:/mssql-backups
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 60s
+      timeout: 10s
+      start_period: 40s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # OPCIONAL — descoberta de containers de banco. Ative com:
+  #   docker compose --profile discovery up -d
+  # e defina DOCKER_DISCOVERY_URL=http://docker-proxy:2375 no .env.
+  # O app NUNCA recebe o docker.sock: só este proxy, que libera apenas GET de containers (sem POST/exec).
+  docker-proxy:
+    image: ${DOCKER_PROXY_IMAGE:-tecnativa/docker-socket-proxy:latest}
+    profiles: ["discovery"]
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      POST: 0
+      EXEC: 0
+      IMAGES: 0
+      NETWORKS: 0
+      VOLUMES: 0
+      INFO: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    tmpfs:
+      - /run
+    security_opt:
+      - no-new-privileges:true

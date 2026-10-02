@@ -1,0 +1,80 @@
+# Teste LOCAL (Docker Desktop) simulando a VPS:
+#   - teste_db: SQL Server 2022 igual ao myseeds_db/bibliotrack_db
+#   - app: backup manager construído a partir do Dockerfile (mesma imagem do GHCR), rodando como UID 10001
+#   - mssql_backup: pasta compartilhada onde o SQL Server grava o .bak
+# Uso: .\scripts\local-test.ps1    (cria .env.local, sobe tudo e cria o banco "loja" com dados)
+name: vbm-local
+
+services:
+  backup-dir-init:
+    image: alpine:3.20
+    command: ["sh", "-c", "chown 10001:10001 /v && chmod 770 /v"]
+    volumes:
+      - mssql_backup:/v
+
+  teste_db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: teste_db
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${SA_PASSWORD:?defina em .env.local}"
+    volumes:
+      - mssql_data:/var/opt/mssql
+      - mssql_backup:/var/opt/mssql/backup
+    depends_on:
+      backup-dir-init:
+        condition: service_completed_successfully
+    networks:
+      - appnet
+
+  app:
+    build: .
+    image: vps-backup-manager:local
+    container_name: vbm_local
+    user: "10001:10001"
+    env_file:
+      - .env.local
+    environment:
+      DATA_DIR: /data
+      BACKUP_ROOT: /backups
+      RCLONE_CONFIG: /config/rclone/rclone.conf
+      HOME: /data/home
+    ports:
+      - "127.0.0.1:8095:8080"
+    volumes:
+      - app_data:/data
+      - app_backups:/backups
+      - app_rclone:/config/rclone
+      - mssql_backup:/mssql/teste
+    depends_on:
+      backup-dir-init:
+        condition: service_completed_successfully
+      app-dirs-init:
+        condition: service_completed_successfully
+    networks:
+      - appnet
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+  # Volumes nomeados do app começam vazios/root: ajusta dono para 10001 antes do app subir.
+  app-dirs-init:
+    image: alpine:3.20
+    command: ["sh", "-c", "chown -R 10001:10001 /data /backups /config/rclone"]
+    volumes:
+      - app_data:/data
+      - app_backups:/backups
+      - app_rclone:/config/rclone
+
+networks:
+  appnet:
+
+volumes:
+  mssql_data:
+  mssql_backup:
+  app_data:
+  app_backups:
+  app_rclone:

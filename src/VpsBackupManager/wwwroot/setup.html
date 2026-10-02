@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Primeiro acesso · VPS Backup Manager</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/setup.js"></script>
+</head>
+<body>
+  <div class="auth">
+    <form class="card" id="setup-form" autocomplete="off">
+      <h1>Primeiro acesso</h1>
+      <p class="muted">Crie o administrador. O token de primeiro acesso foi gerado na instalação; leia-o na VPS com
+        <code>./scripts/show-setup-token.sh</code>.</p>
+      <div id="msg"></div>
+      <div class="field">
+        <label for="token">Token de primeiro acesso</label>
+        <input type="password" id="token" required>
+      </div>
+      <div class="field">
+        <label for="username">Usuário administrador</label>
+        <input type="text" id="username" autocomplete="username" required minlength="3" maxlength="32">
+      </div>
+      <div class="field">
+        <label for="password">Senha</label>
+        <input type="password" id="password" autocomplete="new-password" required minlength="12">
+        <div class="hint">Mínimo 12 caracteres, com 3 tipos entre minúsculas, maiúsculas, números e símbolos.</div>
+      </div>
+      <div class="field">
+        <label for="password2">Confirmar senha</label>
+        <input type="password" id="password2" autocomplete="new-password" required>
+      </div>
+      <button class="primary" type="submit" id="submit">Criar administrador</button>
+    </form>
+  </div>
+</body>
+</html>

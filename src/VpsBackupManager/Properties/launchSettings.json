@@ -1,0 +1,19 @@
+{
+  "profiles": {
+    "VpsBackupManager": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "applicationUrl": "http://localhost:64860",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "APP_SECRET_KEY": "dev-only-secret-key-change-me-0123456789abcdef",
+        "DATA_DIR": "../../.dev/data",
+        "BACKUP_ROOT": "../../.dev/backups",
+        "RCLONE_CONFIG": "../../.dev/rclone.conf",
+        "HOST_GATEWAY_NAME": "127.0.0.1",
+        "TZ_DEFAULT": "America/Sao_Paulo",
+        "SESSION_COOKIE_SECURE": "false"
+      }
+    }
+  }
+}
