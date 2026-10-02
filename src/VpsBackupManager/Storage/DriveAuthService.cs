@@ -50,7 +50,8 @@ public sealed partial class DriveAuthService(
 
             // 1st try: {"scope":"drive.file"} (rclone only sees files it created). Some rclone versions do not
             // accept the config blob — then retry with the default scope.
-            var configBlob = Convert.ToBase64String(Encoding.UTF8.GetBytes("{\"scope\":\"drive.file\"}"));
+            // rclone expects unpadded URL-safe base64 (Go base64.RawURLEncoding).
+            var configBlob = Convert.ToBase64String(Encoding.UTF8.GetBytes("{\"scope\":\"drive.file\"}")).TrimEnd('=').Replace('+', '-').Replace('/', '_');
             var (localLink, output) = await LaunchAuthorizeAsync(["authorize", "drive", configBlob, "--auth-no-open-browser"], ct);
             if (localLink is null)
             {

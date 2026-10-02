@@ -5,7 +5,7 @@
       "name": "vbm-dev",
       "runtimeExecutable": "powershell",
       "runtimeArgs": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/dev-run.ps1"],
-      "port": 8080
+      "port": 64860
     }
   ]
 }

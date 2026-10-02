@@ -176,3 +176,22 @@ details > summary { cursor: pointer; font-weight: 650; }
 details[open] > summary { margin-bottom: 10px; }
 .steps { margin: 6px 0 12px; padding-left: 20px; }
 .steps li { margin-bottom: 4px; }
+
+.label-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.label-row label { margin-bottom: 0; }
+.check-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.check-row .check { margin-bottom: 0; }
+.help-btn {
+  width: 18px; height: 18px; padding: 0; border-radius: 50%; font: italic 700 11px/16px Georgia, serif;
+  color: var(--primary); background: var(--info-bg); border: 1px solid var(--primary); cursor: pointer; flex: none;
+}
+.help-btn:hover { background: var(--primary); color: var(--primary-text); }
+.help-list { margin: 6px 0 10px; padding-left: 20px; }
+.help-list li { margin-bottom: 4px; }
+.help-example { margin: 8px 0; word-break: break-word; }
+.help-example code { background: var(--surface-2); padding: 2px 6px; border-radius: 6px; }
+.help-toc { columns: 2 240px; margin: 0; padding-left: 18px; }
+.help-section h3 { text-transform: none; letter-spacing: 0; color: var(--text); font-size: 15px; margin-top: 22px; }
+.help-item { border-top: 1px solid var(--border); padding: 10px 0; }
+.help-item > strong { display: block; margin-bottom: 4px; }
+pre.code { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow-x: auto; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; }

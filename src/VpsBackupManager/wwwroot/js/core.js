@@ -1,3 +1,5 @@
+import { HELP } from './help.js';
+
 // Shared helpers for every page. No framework; DOM built with createElement/textContent (no innerHTML
 // with data) so values coming from the API can never inject markup (XSS).
 
@@ -136,13 +138,42 @@ export async function confirmDialog(title, message, confirmLabel = 'Confirmar', 
   });
 }
 
-export function field(labelText, input, hint) {
-  return h('div', { class: 'field' }, h('label', { text: labelText }), input, hint ? h('div', { class: 'hint', text: hint }) : null);
+/** Renders a help entry ({ text, list, example, warn }) as DOM — text only, never HTML. */
+export function helpContent(entry) {
+  return [
+    entry.text ? h('p', { text: entry.text }) : null,
+    entry.list ? h('ul', { class: 'help-list' }, entry.list.map((x) => h('li', { text: x }))) : null,
+    entry.example ? h('div', { class: 'help-example' }, h('strong', { text: 'Exemplo: ' }), h('code', { text: entry.example })) : null,
+    entry.warn ? h('div', { class: 'alert warning', text: entry.warn }) : null,
+  ].filter(Boolean);
 }
 
-export function checkbox(labelText, checked, attrs = {}) {
+export function openHelp(title, key = title) {
+  const entry = HELP[key];
+  if (!entry) return;
+  const d = openDialog(title);
+  d.body.append(...helpContent(entry),
+    h('p', { class: 'small muted' }, 'Guia completo: ', h('a', { href: '/help.html', target: '_blank', text: 'página Ajuda' }), '.'));
+  d.foot.append(h('button', { type: 'button', class: 'primary', text: 'Entendi', onclick: () => d.close() }));
+}
+
+function helpButton(title, key) {
+  if (!HELP[key]) return null;
+  return h('button', {
+    type: 'button', class: 'help-btn', title: 'O que colocar aqui?', 'aria-label': `Ajuda: ${title}`, text: 'i',
+    onclick: (e) => { e.preventDefault(); e.stopPropagation(); openHelp(title, key); },
+  });
+}
+
+export function field(labelText, input, hint, helpKey = labelText) {
+  return h('div', { class: 'field' },
+    h('div', { class: 'label-row' }, h('label', { text: labelText }), helpButton(labelText, helpKey)),
+    input, hint ? h('div', { class: 'hint', text: hint }) : null);
+}
+
+export function checkbox(labelText, checked, attrs = {}, helpKey = labelText) {
   const input = h('input', { type: 'checkbox', checked: !!checked, ...attrs });
-  return { input, el: h('label', { class: 'check' }, input, labelText) };
+  return { input, el: h('div', { class: 'check-row' }, h('label', { class: 'check' }, input, labelText), helpButton(labelText, helpKey)) };
 }
 
 export async function withBusy(button, fn) {
@@ -155,7 +186,7 @@ export async function withBusy(button, fn) {
 // ---------------------------------------------------------------- page bootstrap
 const NAV = [
   ['/', 'Dashboard'], ['/connections.html', 'Bancos'], ['/schedules.html', 'Agendamentos'],
-  ['/backups.html', 'Histórico'], ['/settings.html', 'Configurações'], ['/logs.html', 'Logs'],
+  ['/backups.html', 'Histórico'], ['/settings.html', 'Configurações'], ['/logs.html', 'Logs'], ['/help.html', 'Ajuda'],
 ];
 
 export async function initPage() {

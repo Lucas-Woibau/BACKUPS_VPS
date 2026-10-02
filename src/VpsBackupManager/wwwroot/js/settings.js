@@ -58,7 +58,7 @@ if (await initPage()) {
   f.useVpsSubfolder.input.addEventListener('change', updatePreview);
   updatePreview();
 
-  const retentionBoxes = { days: field('Dias', f.retentionDays), count: field('Quantidade por banco', f.retentionCount),
+  const retentionBoxes = { days: field('Dias', f.retentionDays, undefined, 'Retenção — dias'), count: field('Quantidade por banco', f.retentionCount),
     gfs: h('div', { class: 'form-grid' }, field('Diários', f.gfsDaily), field('Semanais', f.gfsWeekly), field('Mensais', f.gfsMonthly)) };
   const syncRetention = () => Object.entries(retentionBoxes).forEach(([k, el]) => el.classList.toggle('hidden', f.retentionMode.value !== k));
   f.retentionMode.addEventListener('change', syncRetention);
