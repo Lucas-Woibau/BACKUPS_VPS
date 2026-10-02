@@ -49,7 +49,8 @@ public sealed partial class DriveAuthService(
             _expectedEmail = email;
 
             // 1st try: {"scope":"drive.file"} (rclone only sees files it created). Some rclone versions do not
-            // accept the config blob — then retry with the default scope.
+            // accept the config blob — then retry without it, still asking for drive.file via RCLONE_DRIVE_SCOPE.
+            // Either way CompleteAsync refuses a token that grants the full "drive" scope.
             // rclone expects unpadded URL-safe base64 (Go base64.RawURLEncoding).
             var configBlob = Convert.ToBase64String(Encoding.UTF8.GetBytes("{\"scope\":\"drive.file\"}")).TrimEnd('=').Replace('+', '-').Replace('/', '_');
             var (localLink, output) = await LaunchAuthorizeAsync(["authorize", "drive", configBlob, "--auth-no-open-browser"], ct);
@@ -108,6 +109,9 @@ public sealed partial class DriveAuthService(
         catch (TimeoutException) { Stop(); return new DriveConnectResult(false, "rclone não devolveu o token. Recomece a conexão.", null); }
         finally { Stop(); }
 
+        var scopeProblem = await CheckScopeAsync(tokenJson, ct);
+        if (scopeProblem is not null) return new DriveConnectResult(false, scopeProblem, null);
+
         var settings = await settingsService.GetAsync();
         RcloneConfigFile.WriteDriveRemote(options.RcloneConfig, settings.RcloneRemote, tokenJson);
         logger.LogInformation("Remote {Remote} do Google Drive configurado pelo painel", settings.RcloneRemote);
@@ -125,6 +129,60 @@ public sealed partial class DriveAuthService(
         return new DriveConnectResult(test.Ok,
             (test.Ok ? $"Google Drive conectado ({email ?? _expectedEmail}). Pasta '{settings.RemoteBasePath}' pronta." : "Token salvo, mas o teste falhou: " + test.Message) + mismatch,
             email);
+    }
+
+    private const string FullDriveScope = "https://www.googleapis.com/auth/drive";
+
+    /// <summary>
+    /// Least privilege: the token must NOT grant the full Drive scope (a stolen token would expose the whole
+    /// Google Drive, not only the backups). A full-scope token is revoked and discarded. If Google cannot be
+    /// asked (network), the token is accepted and a warning is logged.
+    /// </summary>
+    private async Task<string?> CheckScopeAsync(string tokenJson, CancellationToken ct)
+    {
+        string? accessToken;
+        try
+        {
+            using var doc = JsonDocument.Parse(tokenJson);
+            accessToken = doc.RootElement.TryGetProperty("access_token", out var t) ? t.GetString() : null;
+        }
+        catch (JsonException) { return "Token inválido devolvido pelo rclone."; }
+        if (string.IsNullOrEmpty(accessToken)) return null;
+
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
+        string[] scopes;
+        try
+        {
+            using var resp = await http.PostAsync("https://oauth2.googleapis.com/tokeninfo",
+                new FormUrlEncodedContent([new("access_token", accessToken)]), ct);
+            if (!resp.IsSuccessStatusCode)
+            {
+                logger.LogWarning("Não foi possível verificar o escopo do token do Drive (HTTP {Status})", (int)resp.StatusCode);
+                return null;
+            }
+            using var info = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+            scopes = (info.RootElement.TryGetProperty("scope", out var sc) ? sc.GetString() ?? "" : "")
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            logger.LogWarning("Não foi possível verificar o escopo do token do Drive: {Error}", ex.Message);
+            return null;
+        }
+
+        if (!scopes.Contains(FullDriveScope, StringComparer.Ordinal)) return null;
+        try
+        {
+            using var _ = await http.PostAsync("https://oauth2.googleapis.com/revoke",
+                new FormUrlEncodedContent([new("token", accessToken)]), ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            logger.LogWarning("Falha ao revogar token com escopo amplo: {Error}", ex.Message);
+        }
+        logger.LogWarning("Token do Drive com escopo completo recusado e revogado");
+        return "O Google concedeu acesso a TODO o seu Google Drive (escopo \"drive\"). Por segurança o token foi descartado: " +
+               "este sistema só aceita o escopo \"drive.file\" (apenas os arquivos que ele cria). Tente conectar novamente.";
     }
 
     public async Task<string?> ReadAccountEmailAsync(string remote, CancellationToken ct)
@@ -148,7 +206,7 @@ public sealed partial class DriveAuthService(
         var link = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var output = new System.Collections.Concurrent.ConcurrentQueue<string>();
         var psi = ProcessRunner.CreateStartInfo("rclone", args,
-            new Dictionary<string, string> { ["RCLONE_CONFIG"] = options.RcloneConfig });
+            new Dictionary<string, string> { ["RCLONE_CONFIG"] = options.RcloneConfig, ["RCLONE_DRIVE_SCOPE"] = "drive.file" });
         _process = Process.Start(psi) ?? throw new StorageException("Falha ao iniciar rclone authorize.", false);
         _process.StandardInput.Close();
         var outTask = PumpAsync(_process.StandardOutput, link, _token, output);

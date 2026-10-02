@@ -56,7 +56,8 @@ public sealed partial class SqlServerProvider : IDatabaseBackupProvider
             await using var cmd = new SqlCommand("SELECT CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(64)) + ' ' + CAST(SERVERPROPERTY('Edition') AS nvarchar(128))", c);
             var version = Convert.ToString(await cmd.ExecuteScalarAsync(ct));
             var shared = CheckSharedFolder(conn);
-            return new TestResult(true, "Conexão realizada com sucesso." + (shared is null ? "" : " Atenção: " + shared), version);
+            var privilege = await PrivilegeWarningAsync(c, ct);
+            return new TestResult(true, "Conexão realizada com sucesso." + (shared is null ? "" : " Atenção: " + shared) + privilege, version);
         }
         catch (SqlException ex)
         {
@@ -89,6 +90,25 @@ public sealed partial class SqlServerProvider : IDatabaseBackupProvider
         catch (SqlException ex)
         {
             throw new ProviderException(Friendly(ex), ex);
+        }
+    }
+
+    /// <summary>
+    /// Least privilege: a backup login only needs db_backupoperator. If it is sysadmin (e.g. "sa"), anyone who
+    /// steals it controls the whole server. Informative only — never blocks the connection.
+    /// </summary>
+    private static async Task<string> PrivilegeWarningAsync(SqlConnection c, CancellationToken ct)
+    {
+        try
+        {
+            await using var cmd = new SqlCommand("SELECT IS_SRVROLEMEMBER('sysadmin')", c);
+            return Convert.ToInt32(await cmd.ExecuteScalarAsync(ct)) == 1
+                ? " Atenção: este login é sysadmin — use um login só com db_backupoperator (docs/04-bancos.md)."
+                : "";
+        }
+        catch (SqlException)
+        {
+            return "";
         }
     }
 

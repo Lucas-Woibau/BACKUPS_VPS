@@ -76,7 +76,7 @@ Abra `http://localhost:8095`. Token do primeiro acesso: `docker exec vps_backup_
 | IP / host | `myseeds_db` | `bibliotrack_db` |
 | Porta | `1433` | `1433` |
 | Nome do banco | valor de `DB_NAME` no `.env` do MySeeds | nome do banco do Bibliotrack |
-| Usuário / Senha | `sa` / `SA_PASSWORD` do `.env` do projeto — ou um `backup_user` (docs/04-bancos.md) | idem |
+| Usuário / Senha | `backup_user` só com `db_backupoperator` (docs/04-bancos.md). **Evite `sa`**: quem roubar a senha controla o servidor inteiro | idem |
 | Pasta no Drive | `VPS/MySeeds` | `VPS/Bibliotrack` |
 | Pasta de backup no SQL Server | `/var/opt/mssql/backup` | `/var/opt/mssql/backup` |
 | Mesma pasta no backup manager | `/mssql/myseeds` | `/mssql/bibliotrack` |

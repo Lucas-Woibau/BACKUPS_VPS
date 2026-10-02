@@ -41,6 +41,11 @@ if (await initPage()) {
       alerts.push(h('div', { class: 'alert warning', text: `Último backup bem-sucedido há ${Math.round(d.lastSuccess.ageHours)} horas.` }));
     }
     if (!d.schedulerHealthy) alerts.push(h('div', { class: 'alert error', text: 'Scheduler não está respondendo. Verifique os logs.' }));
+    if (!d.encryptionEnabled && d.connections > 0) {
+      alerts.push(h('div', { class: 'alert warning' },
+        h('strong', { text: 'Backups sem criptografia: ' }),
+        'os dumps vão em texto claro para o Google Drive. Ative a criptografia age em Configurações (a chave privada fica fora da VPS).'));
+    }
     if (d.drive.ok === false) alerts.push(h('div', { class: 'alert error', text: `Google Drive: ${d.drive.message}` }));
 
     const disk = d.disk || {};

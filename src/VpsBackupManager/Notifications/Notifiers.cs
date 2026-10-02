@@ -1,4 +1,6 @@
+using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -6,10 +8,13 @@ using VpsBackupManager.Services;
 
 namespace VpsBackupManager.Notifications;
 
-public sealed record BackupItemSummary(string Connection, string Database, string Status, long? Size, string? RemotePath, string? Error);
+/// <summary>Sha256 lets the receiver keep an out-of-band copy of each backup's hash (the .sha256 sidecar lives next to
+/// the file, under the same credential, so it alone cannot detect tampering).</summary>
+public sealed record BackupItemSummary(string Connection, string Database, string Status, long? Size, string? RemotePath, string? Error,
+    string? Sha256 = null);
 
 public sealed record NotificationEvent(
-    string Event,            // "backup.success" | "backup.failure" | "test"
+    string Event,            // "backup.success" | "backup.failure" | "settings.changed" | "test"
     string VpsName,
     string RunId,
     string Status,
@@ -19,7 +24,8 @@ public sealed record NotificationEvent(
     int Failed,
     DateTimeOffset StartedAt,
     DateTimeOffset FinishedAt,
-    IReadOnlyList<BackupItemSummary> Items);
+    IReadOnlyList<BackupItemSummary> Items,
+    string? Message = null);
 
 /// <summary>Notification channel. Future channels: e-mail, Telegram, Discord…</summary>
 public interface INotifier
@@ -89,6 +95,50 @@ public sealed class NotificationDispatcher(IEnumerable<INotifier> notifiers, ILo
             {
                 logger.LogWarning("Notificação {Channel} falhou: {Error}", n.Name, ex.Message);
             }
+        }
+    }
+}
+
+/// <summary>
+/// Connection policy for webhook requests: refuses loopback (the app itself), link-local (cloud metadata
+/// 169.254.169.254), unspecified and multicast addresses — checked after DNS resolution and on every
+/// connection, so redirects and DNS rebinding cannot bypass it. Private LAN/Docker addresses stay allowed
+/// because self-hosted receivers (n8n, Uptime Kuma…) often live there.
+/// </summary>
+public static class WebhookHttp
+{
+    public static SocketsHttpHandler CreateHandler() => new()
+    {
+        ConnectCallback = ConnectAsync,
+        MaxAutomaticRedirections = 3,
+    };
+
+    public static bool IsBlocked(IPAddress address)
+    {
+        if (address.IsIPv4MappedToIPv6) address = address.MapToIPv4();
+        if (IPAddress.IsLoopback(address) || address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any)) return true;
+        if (address.AddressFamily == AddressFamily.InterNetworkV6)
+            return address.IsIPv6LinkLocal || address.IsIPv6Multicast || address.IsIPv6SiteLocal;
+        var b = address.GetAddressBytes();
+        return b[0] == 0 || b[0] == 127 || (b[0] == 169 && b[1] == 254) || b[0] >= 224;
+    }
+
+    private static async ValueTask<Stream> ConnectAsync(SocketsHttpConnectionContext context, CancellationToken ct)
+    {
+        var addresses = await Dns.GetHostAddressesAsync(context.DnsEndPoint.Host, ct);
+        var allowed = addresses.Where(a => !IsBlocked(a)).ToArray();
+        if (allowed.Length == 0)
+            throw new HttpRequestException($"Destino do webhook bloqueado (loopback/link-local): {context.DnsEndPoint.Host}");
+        var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+        try
+        {
+            await socket.ConnectAsync(allowed, context.DnsEndPoint.Port, ct);
+            return new NetworkStream(socket, ownsSocket: true);
+        }
+        catch
+        {
+            socket.Dispose();
+            throw;
         }
     }
 }

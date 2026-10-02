@@ -106,6 +106,7 @@ public sealed class ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorH
                 ProviderException or StorageException or PathGuard.UnsafePathException => (400, new { error = Redactor.Redact(ex.Message) }),
                 KeyNotFoundException => (404, new { error = "Não encontrado." }),
                 BackupBusyException => (409, new { error = ex.Message }),
+                PasswordHasherBusyException => (503, new { error = ex.Message }),
                 BadHttpRequestException or System.Text.Json.JsonException => (400, new { error = "Requisição inválida." }),
                 _ => (500, new { error = "Erro interno. Consulte os logs." }),
             };

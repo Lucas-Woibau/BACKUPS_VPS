@@ -86,14 +86,37 @@ public sealed partial class SettingsService(Db db, SecretBox secretBox, AppOptio
     {
         var errors = Validate(settings);
         if (errors.Count > 0) throw new ValidationException(errors);
-        var normalized = settings with
-        {
-            RemoteBasePath = settings.RemoteBasePath.Trim().Trim('/'),
-            VpsFolderName = settings.VpsFolderName.Trim().Trim('/'),
-            AgeRecipients = settings.AgeRecipients.Select(r => r.Trim()).Where(r => r.Length > 0).Distinct().ToList(),
-        };
+        var normalized = Normalize(settings);
         await Upsert(Key, JsonSerializer.Serialize(normalized with { WebhookSecretSet = false }, Json));
         return await GetAsync();
+    }
+
+    private static AppSettings Normalize(AppSettings settings) => settings with
+    {
+        RemoteBasePath = settings.RemoteBasePath.Trim().Trim('/'),
+        VpsFolderName = settings.VpsFolderName.Trim().Trim('/'),
+        AgeRecipients = settings.AgeRecipients.Select(r => r.Trim()).Where(r => r.Length > 0).Distinct().ToList(),
+        WebhookUrl = string.IsNullOrWhiteSpace(settings.WebhookUrl) ? null : settings.WebhookUrl.Trim(),
+    };
+
+    /// <summary>
+    /// Groups of settings whose change could silently destroy or redirect backups (an attacker with a session
+    /// could swap the age key, shrink retention, change the destination or mute alerts). Changing any of them
+    /// requires re-entering the password and is recorded/alerted.
+    /// </summary>
+    public static List<string> SensitiveChanges(AppSettings before, AppSettings after)
+    {
+        var a = Normalize(after);
+        var b = Normalize(before);
+        var changed = new List<string>();
+        if (a.EncryptionEnabled != b.EncryptionEnabled || !a.AgeRecipients.SequenceEqual(b.AgeRecipients)) changed.Add("criptografia");
+        if (a.RcloneRemote != b.RcloneRemote || a.RemoteBasePath != b.RemoteBasePath || a.UseVpsSubfolder != b.UseVpsSubfolder
+            || a.VpsFolderName != b.VpsFolderName) changed.Add("destino dos backups");
+        if (a.RetentionMode != b.RetentionMode || a.RetentionDays != b.RetentionDays || a.RetentionCount != b.RetentionCount
+            || a.GfsDaily != b.GfsDaily || a.GfsWeekly != b.GfsWeekly || a.GfsMonthly != b.GfsMonthly) changed.Add("retenção");
+        if (a.WebhookEnabled != b.WebhookEnabled || a.WebhookUrl != b.WebhookUrl || a.WebhookOnFailure != b.WebhookOnFailure)
+            changed.Add("alertas (webhook)");
+        return changed;
     }
 
     public async Task SetWebhookSecretAsync(string? secret)

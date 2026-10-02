@@ -90,7 +90,8 @@ try
     services.AddSingleton<DashboardService>();
     services.AddSingleton<DiscoveryService>();
     services.AddSingleton<DriveAuthService>();
-    services.AddHttpClient("webhook", c => c.Timeout = TimeSpan.FromSeconds(10));
+    services.AddHttpClient("webhook", c => c.Timeout = TimeSpan.FromSeconds(10))
+        .ConfigurePrimaryHttpMessageHandler(WebhookHttp.CreateHandler);
     services.AddHttpClient("docker", c => c.Timeout = TimeSpan.FromSeconds(5));
     services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(30));
 
@@ -131,6 +132,10 @@ try
         ctx.Response.StatusCode = StatusCodes.Status404NotFound;
         return ctx.Response.WriteAsJsonAsync(new { error = "Não encontrado." });
     });
+
+    if (options.SecretKey == AppOptions.DevOnlySecretKey && !app.Environment.IsDevelopment())
+        Log.Error("APP_SECRET_KEY é a chave de DESENVOLVIMENTO publicada no repositório. Gere outra com 'openssl rand -base64 48' " +
+                  "e recadastre as senhas das conexões.");
 
     Log.Information("VPS Backup Manager iniciado. Dados: {DataDir}, backups: {BackupRoot}", options.DataDir, options.BackupRoot);
     await app.RunAsync();

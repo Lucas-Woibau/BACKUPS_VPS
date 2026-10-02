@@ -10,6 +10,9 @@
     <InvariantGlobalization>false</InvariantGlobalization>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <UserSecretsId>2f176660-71ad-4011-bc2d-8dfdee715e43</UserSecretsId>
+    <!-- Lock file records exact versions + content hashes; CI (GitHub Actions sets CI=true) refuses drift. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
   </PropertyGroup>
 
   <ItemGroup>

@@ -25,11 +25,14 @@ CREATE LOGIN backup_user WITH PASSWORD = 'SENHA-FORTE-AQUI', CHECK_POLICY = ON;
 USE [loja];
 CREATE USER backup_user FOR LOGIN backup_user;
 ALTER ROLE db_backupoperator ADD MEMBER backup_user;
--- Para listar os bancos e para RESTORE VERIFYONLY (verificação do .bak):
+-- Para listar os bancos (já é padrão do papel public na maioria das instalações):
 USE [master];
 GRANT VIEW ANY DATABASE TO backup_user;
-GRANT CREATE ANY DATABASE TO backup_user;   -- opcional: sem ele a verificação é pulada (aviso no histórico)
 ```
+
+> **Não** conceda `CREATE ANY DATABASE` nem use `sa`/sysadmin. Sem `CREATE ANY DATABASE` o `RESTORE VERIFYONLY`
+> é pulado (aviso no histórico); a integridade continua coberta por `BACKUP ... WITH CHECKSUM`, pela verificação do
+> cabeçalho e pela descompressão completa antes do upload. Ao testar a conexão, o painel avisa se o login é sysadmin.
 
 Limitações:
 - O app usa `BACKUP DATABASE ... WITH COPY_ONLY, CHECKSUM` — **não** interfere na cadeia de backups de log
@@ -229,15 +232,10 @@ O `pg_hba.conf` das imagens oficiais aceita conexões da rede Docker por padrão
 Botão **Descobrir serviços** em Conexões:
 
 - Sempre: testa conexão TCP **somente** em `host.docker.internal` nas portas 3306/3307/5432/5433. Nenhuma varredura de rede.
-- Docker (opcional): lista containers com imagens mysql/mariadb/postgres via **docker-socket-proxy somente leitura**:
-  ```bash
-  echo 'DOCKER_DISCOVERY_URL=http://docker-proxy:2375' >> .env
-  docker compose --profile discovery up -d
-  ```
-  Riscos: o `docker.sock` dá controle total do host. Por isso ele **nunca** é montado no app; o proxy libera apenas
-  `GET /containers` (sem POST/exec). O app usa somente `/containers/json`, que não retorna variáveis de ambiente.
-  Mesmo assim, o proxy pode expor detalhes dos containers a quem acessar a rede interna — habilite só se for útil e
-  desligue depois (`docker compose --profile discovery down docker-proxy`).
+- Containers Docker: rode `./scripts/detect-env.sh` no host (somente leitura). O serviço opcional
+  `docker-proxy` (tecnativa/docker-socket-proxy) foi **removido** do `docker-compose.yml`: com `CONTAINERS=1` ele libera
+  qualquer `GET /containers/*` — incluindo `/containers/{id}/json` (variáveis de ambiente, ex.: `MSSQL_SA_PASSWORD`),
+  `/archive` e `/export` (arquivos dos bancos) — para qualquer container da rede. Não o reative.
 
 Credenciais nunca são descobertas: você informa o usuário de backup.
 

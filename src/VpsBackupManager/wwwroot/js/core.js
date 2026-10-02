@@ -9,8 +9,8 @@ export class ApiError extends Error {
   constructor(message, status, data) { super(message); this.status = status; this.data = data; }
 }
 
-export async function api(method, url, body) {
-  const headers = { 'X-Requested-With': 'vbm', 'Accept': 'application/json' };
+export async function api(method, url, body, extraHeaders = {}) {
+  const headers = { 'X-Requested-With': 'vbm', 'Accept': 'application/json', ...extraHeaders };
   if (state.csrf) headers['X-CSRF-Token'] = state.csrf;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(url, {
@@ -23,6 +23,15 @@ export async function api(method, url, body) {
   if (res.status === 401 && !url.startsWith('/api/auth/')) { location.href = '/login.html'; throw new ApiError('Sessão expirada', 401); }
   if (!res.ok) throw new ApiError((data && data.error) || `Erro HTTP ${res.status}`, res.status, data);
   return data;
+}
+
+/** Header for sensitive changes: the current password, base64(UTF-8) so any character fits in an HTTP header. */
+export function reauthHeader(password) {
+  if (!password) return {};
+  const bytes = new TextEncoder().encode(password);
+  let bin = '';
+  bytes.forEach((b) => { bin += String.fromCharCode(b); });
+  return { 'X-Current-Password': btoa(bin) };
 }
 
 /** h('div', {class:'x', onclick: fn}, 'text', childNode, [more]) */

@@ -48,7 +48,7 @@ export const HELP = {
   'Usuário': {
     text: 'Login do BANCO DE DADOS (não é o usuário da VPS nem do painel).',
     list: [
-      'SQL Server: "sa" funciona; o ideal é criar um login só para backup (veja a página Ajuda → Usuário de backup).',
+      'SQL Server: use um login só para backup (página Ajuda → Usuário de backup). "sa" funciona, mas dá controle total do servidor a quem roubar a senha — o teste de conexão avisa quando o login é sysadmin.',
       'A senha do sa do MySeeds está no .env do projeto (SA_PASSWORD) ou em: docker exec myseeds_db printenv MSSQL_SA_PASSWORD',
     ],
     example: 'sa   |   backup_user',

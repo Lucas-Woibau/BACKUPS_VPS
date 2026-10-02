@@ -4,9 +4,16 @@ using Konscious.Security.Cryptography;
 
 namespace VpsBackupManager.Security;
 
+/// <summary>Thrown when too many password hashes are already running (Argon2id uses 64 MiB each).</summary>
+public sealed class PasswordHasherBusyException() : Exception("Servidor ocupado verificando senhas. Tente novamente em instantes.");
+
 /// <summary>Argon2id password hashing, encoded in the standard PHC string format.</summary>
 public static class PasswordHasher
 {
+    // Bounds memory use under a burst of parallel logins: at most N × 64 MiB at a time.
+    private static readonly SemaphoreSlim Gate = new(2, 2);
+    private static readonly TimeSpan GateWait = TimeSpan.FromSeconds(15);
+
     public const int MinLength = 12;
     private const int MemoryKb = 65536; // 64 MiB
     private const int Iterations = 3;
@@ -33,7 +40,7 @@ public static class PasswordHasher
             var actual = Compute(password, salt, p["m"], p["t"], p["p"], expected.Length);
             return CryptographicOperations.FixedTimeEquals(actual, expected);
         }
-        catch
+        catch (Exception ex) when (ex is not PasswordHasherBusyException)
         {
             return false;
         }
@@ -56,6 +63,22 @@ public static class PasswordHasher
     }
 
     private static byte[] Compute(string password, byte[] salt, int memKb, int iterations, int parallelism, int len)
+    {
+        // Stored hashes are trusted, but never let a crafted value request absurd memory/time.
+        if (memKb is < 8 or > 1024 * 1024 || iterations is < 1 or > 20 || parallelism is < 1 or > 16 || len is < 16 or > 64)
+            throw new FormatException("Parâmetros Argon2 fora dos limites.");
+        if (!Gate.Wait(GateWait)) throw new PasswordHasherBusyException();
+        try
+        {
+            return ComputeCore(password, salt, memKb, iterations, parallelism, len);
+        }
+        finally
+        {
+            Gate.Release();
+        }
+    }
+
+    private static byte[] ComputeCore(string password, byte[] salt, int memKb, int iterations, int parallelism, int len)
     {
         using var argon = new Argon2id(Encoding.UTF8.GetBytes(password))
         {

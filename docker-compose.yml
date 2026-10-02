@@ -49,26 +49,6 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # OPCIONAL — descoberta de containers de banco. Ative com:
-  #   docker compose --profile discovery up -d
-  # e defina DOCKER_DISCOVERY_URL=http://docker-proxy:2375 no .env.
-  # O app NUNCA recebe o docker.sock: só este proxy, que libera apenas GET de containers (sem POST/exec).
-  docker-proxy:
-    image: ${DOCKER_PROXY_IMAGE:-tecnativa/docker-socket-proxy:latest}
-    profiles: ["discovery"]
-    restart: unless-stopped
-    environment:
-      CONTAINERS: 1
-      POST: 0
-      EXEC: 0
-      IMAGES: 0
-      NETWORKS: 0
-      VOLUMES: 0
-      INFO: 0
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    read_only: true
-    tmpfs:
-      - /run
-    security_opt:
-      - no-new-privileges:true
+  # A descoberta de containers via docker-socket-proxy foi removida: o proxy (CONTAINERS=1) libera qualquer
+  # GET /containers/* — inclusive /containers/{id}/json (variáveis de ambiente com senhas), /archive e /export
+  # (sistema de arquivos inteiro dos bancos). Use scripts/detect-env.sh no host para listar os containers.

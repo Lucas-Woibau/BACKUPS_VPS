@@ -60,9 +60,9 @@ const FAQ = [
     code: 'docker exec myseeds_db printenv MSSQL_SA_PASSWORD\ndocker exec bibliotrack_db printenv MSSQL_SA_PASSWORD',
   },
   {
-    q: 'Quero um usuário só para backup (mais seguro que o sa)',
-    a: ['Rode no SQL Server (como sa), trocando o nome do banco e a senha:'],
-    code: "CREATE LOGIN backup_user WITH PASSWORD = 'SenhaForte#2026';\nUSE [NomeDoBanco];\nCREATE USER backup_user FOR LOGIN backup_user;\nALTER ROLE db_backupoperator ADD MEMBER backup_user;\nUSE [master];\nGRANT VIEW ANY DATABASE TO backup_user;",
+    q: 'Quero um usuário só para backup (recomendado no lugar do sa)',
+    a: ['Rode no SQL Server (como sa), trocando o nome do banco e a senha. Com o sa, quem roubar a senha controla o servidor inteiro; o backup_user só consegue fazer backup:'],
+    code: "CREATE LOGIN backup_user WITH PASSWORD = 'TROQUE-POR-UMA-SENHA-FORTE';\nUSE [NomeDoBanco];\nCREATE USER backup_user FOR LOGIN backup_user;\nALTER ROLE db_backupoperator ADD MEMBER backup_user;\nUSE [master];\nGRANT VIEW ANY DATABASE TO backup_user;",
   },
   {
     q: 'Não sei o nome do banco',

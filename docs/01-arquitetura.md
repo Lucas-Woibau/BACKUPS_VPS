@@ -97,7 +97,7 @@ Reinício no meio de um backup: na subida, execuções `running` são marcadas c
 ```
 VpsBackups/
 ├── Dockerfile                         # build multi-stage + clientes de banco + rclone + age
-├── docker-compose.yml                 # app + docker-proxy opcional (profile discovery)
+├── docker-compose.yml                 # app (modo genérico)
 ├── docker-compose.override.example.yml# redes externas / network_mode host
 ├── .env.example  .gitignore  .dockerignore  .gitattributes
 ├── VpsBackupManager.slnx

@@ -92,6 +92,7 @@ public sealed class DashboardService(
                 lastUpload = Clock.IsoFromMs(lastUpload), destination = $"{settings.RcloneRemote}:{settings.RemoteBasePath}",
             },
             schedulerHealthy = scheduler.Healthy,
+            encryptionEnabled = settings.EncryptionEnabled,
         };
     }
 

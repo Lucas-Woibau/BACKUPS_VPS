@@ -9,8 +9,9 @@ public sealed record DiscoveredService(string Source, string Type, string Name, 
 /// <summary>
 /// Safe discovery. Never scans networks and never reads credentials:
 ///  - host probe: TCP connect only to the Docker host gateway on the default ports (1433/3306/3307/5432/5433);
-///  - Docker (optional): lists running containers through a READ-ONLY docker-socket-proxy
-///    (GET /containers/json only — that endpoint does not return container environment variables).
+///  - Docker (optional, off by default): GET {DOCKER_DISCOVERY_URL}/containers/json. The docker-socket-proxy service
+///    was removed from docker-compose.yml because CONTAINERS=1 also allows /containers/{id}/json (env), /archive
+///    and /export; only point this at an endpoint that allows nothing but /containers/json.
 /// </summary>
 public sealed class DiscoveryService(AppOptions options, IHttpClientFactory httpFactory, ILogger<DiscoveryService> logger)
 {

@@ -7,6 +7,9 @@ namespace VpsBackupManager.Config;
 /// </summary>
 public sealed class AppOptions
 {
+    /// <summary>Key used only by launchSettings.json / scripts/dev-run.ps1 (public). Never valid for production.</summary>
+    public const string DevOnlySecretKey = "dev-only-secret-key-change-me-0123456789abcdef";
+
     public required string SecretKey { get; init; }
     public required string DataDir { get; init; }
     public required string BackupRoot { get; init; }

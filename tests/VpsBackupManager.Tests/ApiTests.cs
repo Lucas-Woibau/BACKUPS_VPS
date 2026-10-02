@@ -123,6 +123,30 @@ public sealed class ApiTests : IClassFixture<ApiTests.AppFactory>
         traversal["remoteBasePath"] = "../../etc";
         Assert.Equal(HttpStatusCode.BadRequest, (await c.SendAsync(Req(HttpMethod.Put, "/api/settings", traversal, csrf))).StatusCode);
 
+        // non-sensitive change: no password needed
+        var harmless = JsonSerializer.Deserialize<Dictionary<string, object>>(settings.GetRawText())!;
+        harmless["vpsName"] = "VPS-Teste";
+        Assert.Equal(HttpStatusCode.OK, (await c.SendAsync(Req(HttpMethod.Put, "/api/settings", harmless, csrf))).StatusCode);
+
+        // sensitive change (retention): requires the current password
+        var sensitive = new Dictionary<string, object>(harmless) { ["retentionMode"] = "count", ["retentionCount"] = 1 };
+        var noPw = await c.SendAsync(Req(HttpMethod.Put, "/api/settings", sensitive, csrf));
+        Assert.Equal(HttpStatusCode.Forbidden, noPw.StatusCode);
+        Assert.True((await noPw.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("reauthRequired").GetBoolean());
+        var wrongPw = Req(HttpMethod.Put, "/api/settings", sensitive, csrf);
+        wrongPw.Headers.Add("X-Current-Password", Convert.ToBase64String("errada"u8.ToArray()));
+        Assert.Equal(HttpStatusCode.Forbidden, (await c.SendAsync(wrongPw)).StatusCode);
+        var rightPw = Req(HttpMethod.Put, "/api/settings", sensitive, csrf);
+        rightPw.Headers.Add("X-Current-Password", Convert.ToBase64String("Very-Strong-Pass-1"u8.ToArray()));
+        Assert.Equal(HttpStatusCode.OK, (await c.SendAsync(rightPw)).StatusCode);
+        Assert.Equal("count", (await c.GetFromJsonAsync<JsonElement>("/api/settings")).GetProperty("retentionMode").GetString());
+        var evts = await c.GetFromJsonAsync<JsonElement>("/api/events?level=warning");
+        Assert.Contains(evts.EnumerateArray(), e => e.GetProperty("message").GetString()!.Contains("retenção"));
+
+        // Google account switch also requires the password
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await c.SendAsync(Req(HttpMethod.Post, "/api/drive/connect", new { email = "x@gmail.com" }, csrf))).StatusCode);
+
         // schedules
         var sched = await c.SendAsync(Req(HttpMethod.Post, "/api/schedules", new
         {

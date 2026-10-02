@@ -9,7 +9,7 @@ ARG RCLONE_IMAGE=rclone/rclone:1.71
 # ------------------------------------------------------------------ build
 FROM mcr.microsoft.com/dotnet/sdk:${DOTNET_VERSION}-noble AS build
 WORKDIR /src
-COPY src/VpsBackupManager/VpsBackupManager.csproj src/VpsBackupManager/
+COPY src/VpsBackupManager/VpsBackupManager.csproj src/VpsBackupManager/packages.lock.json src/VpsBackupManager/
 RUN dotnet restore src/VpsBackupManager/VpsBackupManager.csproj
 COPY src/ src/
 RUN dotnet publish src/VpsBackupManager/VpsBackupManager.csproj -c Release -o /app --no-restore /p:UseAppHost=false

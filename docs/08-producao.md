@@ -12,7 +12,7 @@ Só considere pronto quando **todos** os itens estiverem marcados.
 - [ ] Senha do admin forte e única; token de setup consumido (`show-setup-token.sh` diz "nenhum token")
 - [ ] Usuários de banco dedicados, só leitura (Fase 8) — nenhum `root`/`postgres` no painel
 - [ ] Se acesso por domínio: HTTPS ativo, `SESSION_COOKIE_SECURE=true`, `TRUST_PROXY_HEADERS=true`, allow-list ou VPN
-- [ ] `docker-proxy` (descoberta) desligado se não estiver em uso
+- [ ] Nenhum `docker-socket-proxy`/`docker.sock` acessível pelo app (descoberta Docker removida)
 - [ ] `git status` sem `.env`, `data/`, `rclone/` (verifique o `.gitignore`)
 - [ ] `unattended-upgrades` ou rotina de atualização da VPS
 

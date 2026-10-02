@@ -216,3 +216,40 @@ public class CompressionAndSettingsTests
         Assert.NotEmpty(SettingsService.Validate(new AppSettings { Compression = "gzip", CompressionLevel = 15 }));
     }
 }
+
+public class HardeningTests
+{
+    [Theory]
+    [InlineData("127.0.0.1", true)]
+    [InlineData("::1", true)]
+    [InlineData("169.254.169.254", true)]
+    [InlineData("0.0.0.0", true)]
+    [InlineData("224.0.0.1", true)]
+    [InlineData("::ffff:127.0.0.1", true)]
+    [InlineData("fe80::1", true)]
+    [InlineData("172.17.0.1", false)]
+    [InlineData("10.0.0.5", false)]
+    [InlineData("8.8.8.8", false)]
+    public void Webhook_blocks_loopback_and_link_local(string ip, bool blocked) =>
+        Assert.Equal(blocked, VpsBackupManager.Notifications.WebhookHttp.IsBlocked(System.Net.IPAddress.Parse(ip)));
+
+    [Fact]
+    public void Sensitive_settings_changes_are_detected()
+    {
+        var s = new AppSettings();
+        Assert.Empty(SettingsService.SensitiveChanges(s, s with { VpsName = "outro", Compression = "zstd", KeepLocalCopy = true }));
+        Assert.Empty(SettingsService.SensitiveChanges(s, s with { RemoteBasePath = " /Backups/ " }));
+        Assert.Contains("criptografia", SettingsService.SensitiveChanges(s, s with { AgeRecipients = ["age1" + new string('q', 58)] }));
+        Assert.Contains("retenção", SettingsService.SensitiveChanges(s, s with { RetentionCount = 1 }));
+        Assert.Contains("destino dos backups", SettingsService.SensitiveChanges(s, s with { RcloneRemote = "outro" }));
+        Assert.Contains("alertas (webhook)", SettingsService.SensitiveChanges(s, s with { WebhookUrl = "https://x.example" }));
+    }
+
+    [Fact]
+    public void Login_throttle_prunes_expired_keys()
+    {
+        var t = new VpsBackupManager.Security.LoginThrottle(maxFailures: 5, windowSeconds: 0);
+        for (var i = 0; i < 10_050; i++) t.Fail("user:" + i);
+        Assert.False(t.IsBlocked("user:1"));
+    }
+}

@@ -598,7 +598,7 @@ public sealed class BackupOrchestrator(
             await notifications.DispatchAsync(new NotificationEvent(
                 summary.Err > 0 ? "backup.failure" : "backup.success", settings.VpsName, runId, summary.Status,
                 summary.Total, summary.Ok, summary.Warn, summary.Err, startedAt, Clock.UtcNow(),
-                items.Select(i => new BackupItemSummary(i.ConnectionName, i.DatabaseName, i.Status, i.FinalSize, i.RemotePath, i.Error)).ToList()));
+                items.Select(i => new BackupItemSummary(i.ConnectionName, i.DatabaseName, i.Status, i.FinalSize, i.RemotePath, i.Error, i.ChecksumSha256)).ToList()));
         }
         catch (Exception ex)
         {

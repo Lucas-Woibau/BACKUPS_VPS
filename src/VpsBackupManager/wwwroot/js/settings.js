@@ -1,5 +1,5 @@
 import {
-  api, h, clear, $, initPage, errorToast, toast, field, checkbox, withBusy, fmtBytes, fmtDate,
+  api, h, clear, $, initPage, errorToast, toast, field, checkbox, withBusy, fmtBytes, fmtDate, reauthHeader,
 } from './core.js';
 
 if (await initPage()) {
@@ -67,6 +67,8 @@ if (await initPage()) {
   const msg = h('div', {});
   const storageResult = h('div', {});
   const webhookResult = h('div', {});
+  // Re-authentication for sensitive changes (encryption, retention, destination, webhook, Google account).
+  const confirmPw = h('input', { type: 'password', autocomplete: 'current-password', placeholder: 'só para mudanças sensíveis' });
   const webhookSecret = h('input', { type: 'password', autocomplete: 'new-password', placeholder: s.webhookSecretSet ? '(segredo definido — digite para trocar)' : 'opcional' });
 
   const collect = () => ({
@@ -90,7 +92,8 @@ if (await initPage()) {
 
   async function save() {
     try {
-      await api('PUT', '/api/settings', collect());
+      await api('PUT', '/api/settings', collect(), reauthHeader(confirmPw.value));
+      confirmPw.value = '';
       if (webhookSecret.value) { await api('POST', '/api/settings/webhook-secret', { secret: webhookSecret.value }); webhookSecret.value = ''; }
       clear(msg, h('div', { class: 'alert success', text: 'Configurações salvas.' }));
       toast('Configurações salvas.', 'success');
@@ -127,7 +130,8 @@ if (await initPage()) {
       type: 'button', class: 'primary', text: driveStatus.configured ? 'Reconectar' : 'Conectar Google Drive',
       onclick: (e) => withBusy(e.target, async () => {
         try {
-          const r = await api('POST', '/api/drive/connect', { email: gmail.value });
+          const r = await api('POST', '/api/drive/connect', { email: gmail.value }, reauthHeader(confirmPw.value));
+          confirmPw.value = '';
           window.open(r.authUrl, '_blank', 'noopener');
           clear(step2,
             h('ol', { class: 'steps' },
@@ -155,6 +159,7 @@ if (await initPage()) {
       status,
       h('p', { class: 'small muted', text: 'Informe o Gmail onde os backups serão guardados. O Google exige uma autorização (um clique em "Permitir") só na primeira vez; depois tudo funciona sozinho, mesmo com seu PC desligado. O acesso fica limitado aos arquivos criados por este sistema.' }),
       h('div', { class: 'row' }, h('div', { class: 'spacer' }, field('Gmail', gmail)), connectBtn),
+      h('p', { class: 'small muted', text: 'Exige a senha atual (campo "Confirmar com a senha atual" no topo da página).' }),
       step2, result);
   }
 
@@ -162,6 +167,9 @@ if (await initPage()) {
     h('div', { class: 'page-head' }, h('div', {}, h('h1', { text: 'Configurações' })),
       h('button', { type: 'button', class: 'primary', text: 'Salvar configurações', onclick: (e) => withBusy(e.target, save) })),
     msg,
+    h('div', { class: 'card' },
+      field('Confirmar com a senha atual', confirmPw,
+        'Obrigatória para alterar criptografia, retenção, destino, webhook ou conectar o Google Drive. Alterações sensíveis ficam registradas nos Logs e disparam alerta no webhook.')),
     h('div', { class: 'card' },
       h('fieldset', {}, h('legend', { text: 'VPS' }), h('div', { class: 'form-grid' },
         field('Nome amigável', f.vpsName), field('Hostname', h('input', { type: 'text', value: sys.hostname, disabled: true })),
@@ -236,7 +244,7 @@ if (await initPage()) {
         h('tr', {}, h('th', { text: 'Sistema operacional' }), h('td', { text: `${sys.os} (${sys.arch})` })),
         h('tr', {}, h('th', { text: 'Versão' }), h('td', { text: `${sys.appVersion} · .NET ${sys.dotnet}` })),
         h('tr', {}, h('th', { text: 'Disco (backups)' }), h('td', { text: sys.disk.freeBytes !== undefined ? `${fmtBytes(sys.disk.freeBytes)} livres de ${fmtBytes(sys.disk.totalBytes)}` : '—' })),
-        h('tr', {}, h('th', { text: 'Descoberta Docker' }), h('td', { text: sys.dockerDiscovery ? 'habilitada (socket proxy somente leitura)' : 'desabilitada' })),
+        h('tr', {}, h('th', { text: 'Descoberta Docker' }), h('td', { text: sys.dockerDiscovery ? 'habilitada (DOCKER_DISCOVERY_URL definido)' : 'desabilitada' })),
         tools))),
 
     h('div', { class: 'card' }, h('h2', { text: 'Trocar minha senha' }),

@@ -101,8 +101,11 @@ public sealed class LoginThrottle(int maxFailures = 5, int windowSeconds = 900)
 
     public bool IsBlocked(params string[] keys) => keys.Any(k => Count(k) >= maxFailures);
 
+    private const int MaxTrackedKeys = 10_000;
+
     public void Fail(params string[] keys)
     {
+        if (_failures.Count > MaxTrackedKeys) Prune();
         foreach (var k in keys)
         {
             var q = _failures.GetOrAdd(k, _ => new Queue<DateTimeOffset>());
@@ -113,6 +116,13 @@ public sealed class LoginThrottle(int maxFailures = 5, int windowSeconds = 900)
     public void Reset(params string[] keys)
     {
         foreach (var k in keys) _failures.TryRemove(k, out _);
+    }
+
+    /// <summary>Drops keys whose failures all expired, so random usernames cannot grow the map forever.</summary>
+    private void Prune()
+    {
+        foreach (var key in _failures.Keys)
+            if (Count(key) == 0) _failures.TryRemove(key, out _);
     }
 
     private int Count(string key)

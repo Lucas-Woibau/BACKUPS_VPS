@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using VpsBackupManager.Config;
 using VpsBackupManager.Data;
@@ -13,7 +14,44 @@ public sealed record ChangePasswordRequest(string CurrentPassword, string NewPas
 public static partial class AuthEndpoints
 {
     // Used when the user does not exist so the response time does not reveal valid usernames.
-    private static readonly Lazy<string> DummyHash = new(() => PasswordHasher.Hash(Guid.NewGuid().ToString()));
+    // PublicationOnly: a transient PasswordHasherBusyException must not be cached forever by Lazy.
+    private static readonly Lazy<string> DummyHash = new(() => PasswordHasher.Hash(Guid.NewGuid().ToString()),
+        LazyThreadSafetyMode.PublicationOnly);
+
+    /// <summary>Header with the current password, base64(UTF-8), required for sensitive changes.</summary>
+    public const string ReauthHeader = "X-Current-Password";
+
+    /// <summary>
+    /// Re-checks the logged-in user's password before a sensitive change (encryption keys, retention,
+    /// destination, webhook, Google account), so a stolen session alone cannot sabotage backups.
+    /// Returns null when allowed, otherwise the error response. Attempts are throttled per user.
+    /// </summary>
+    public static async Task<IResult?> RequireReauthAsync(HttpContext ctx, Db db, LoginThrottle throttle, string action)
+    {
+        var session = ctx.Session();
+        if (session is null) return Results.Json(new { error = "Não autenticado." }, statusCode: 401);
+        var key = "reauth:" + session.UserId;
+        if (throttle.IsBlocked(key)) return Results.Json(new { error = "Muitas tentativas. Aguarde 15 minutos." }, statusCode: 429);
+
+        string? password = null;
+        var raw = ctx.Request.Headers[ReauthHeader].ToString();
+        if (raw.Length is > 0 and <= 2048)
+        {
+            try { password = Encoding.UTF8.GetString(Convert.FromBase64String(raw)); }
+            catch (FormatException) { /* treated as missing */ }
+        }
+        if (string.IsNullOrEmpty(password))
+            return Results.Json(new { error = $"Confirme sua senha atual para {action}.", reauthRequired = true }, statusCode: 403);
+
+        var user = await db.QueryOneAsync<UserRow>("SELECT * FROM users WHERE id=@id", new { id = session.UserId });
+        if (user is null || !PasswordHasher.Verify(user.PasswordHash, password))
+        {
+            throttle.Fail(key);
+            return Results.Json(new { error = "Senha atual incorreta.", reauthRequired = true }, statusCode: 403);
+        }
+        throttle.Reset(key);
+        return null;
+    }
 
     public static void Map(WebApplication app)
     {

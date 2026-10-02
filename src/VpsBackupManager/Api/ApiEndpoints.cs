@@ -5,6 +5,7 @@ using VpsBackupManager.Data;
 using VpsBackupManager.Notifications;
 using VpsBackupManager.Providers;
 using VpsBackupManager.Scheduling;
+using VpsBackupManager.Security;
 using VpsBackupManager.Services;
 using VpsBackupManager.Storage;
 
@@ -174,7 +175,21 @@ public static class ApiEndpoints
 
         // ------------------------------------------------------------------ settings
         api.MapGet("/settings", (SettingsService s) => s.GetAsync());
-        api.MapPut("/settings", (AppSettings input, SettingsService s) => s.SaveAsync(input));
+        api.MapPut("/settings", async (AppSettings input, HttpContext ctx, SettingsService s, Db db, LoginThrottle throttle,
+            EventLog events, WebhookNotifier webhook, ILogger<WebhookNotifier> logger) =>
+        {
+            var errors = SettingsService.Validate(input);
+            if (errors.Count > 0) throw new ValidationException(errors);
+            var before = await s.GetAsync();
+            var changed = SettingsService.SensitiveChanges(before, input);
+            if (changed.Count > 0 &&
+                await AuthEndpoints.RequireReauthAsync(ctx, db, throttle, "alterar " + string.Join(", ", changed)) is { } denied)
+                return denied;
+            var saved = await s.SaveAsync(input);
+            if (changed.Count > 0)
+                await AlertSensitiveChangeAsync(ctx, before, s, events, webhook, logger, "Configuração sensível alterada: " + string.Join(", ", changed));
+            return Results.Ok(saved);
+        });
         api.MapPost("/settings/webhook-secret", async (WebhookSecretRequest req, SettingsService s) =>
         {
             if (req.Secret is { Length: > 256 }) throw new ValidationException(["Segredo longo demais."]);
@@ -207,8 +222,16 @@ public static class ApiEndpoints
             }
         });
         // ------------------------------------------------------------------ Google Drive (Gmail)
-        api.MapPost("/drive/connect", async (DriveConnectRequest req, DriveAuthService auth, CancellationToken ct) =>
-            Results.Ok(await auth.StartAsync(req.Email ?? "", ct)));
+        api.MapPost("/drive/connect", async (DriveConnectRequest req, HttpContext ctx, DriveAuthService auth, Db db, LoginThrottle throttle,
+            SettingsService s, EventLog events, WebhookNotifier webhook, ILogger<WebhookNotifier> logger, CancellationToken ct) =>
+        {
+            // Reconnecting to another Google account would redirect every future backup to that account.
+            if (await AuthEndpoints.RequireReauthAsync(ctx, db, throttle, "conectar uma conta do Google Drive") is { } denied) return denied;
+            var started = await auth.StartAsync(req.Email ?? "", ct);
+            await AlertSensitiveChangeAsync(ctx, await s.GetAsync(), s, events, webhook, logger,
+                $"Autorização do Google Drive iniciada para {req.Email?.Trim()}");
+            return Results.Ok(started);
+        });
         api.MapPost("/drive/complete", async (DriveCompleteRequest req, DriveAuthService auth, CancellationToken ct) =>
             Results.Ok(await auth.CompleteAsync(req.Url ?? "", ct)));
         api.MapGet("/drive/status", async (SettingsService s, AppOptions o) =>
@@ -227,6 +250,33 @@ public static class ApiEndpoints
             TimeZoneInfo.GetSystemTimeZones()
                 .Select(t => t.HasIanaId ? t.Id : TimeZoneInfo.TryConvertWindowsIdToIanaId(t.Id, out var iana) ? iana : null)
                 .Where(id => id is not null && id.Contains('/')).Distinct().Order());
+    }
+
+    /// <summary>
+    /// Records a sensitive change in the event log and alerts the webhook configured BEFORE the change
+    /// (so an attacker who changes or disables the webhook still triggers the alert). Never fails the request.
+    /// </summary>
+    private static async Task AlertSensitiveChangeAsync(HttpContext ctx, AppSettings before, SettingsService settings, EventLog events,
+        WebhookNotifier webhook, ILogger logger, string message)
+    {
+        var who = $"{ctx.Session()?.Username ?? "?"} ({ctx.ClientIp()})";
+        await events.Warn(null, null, $"{message} — por {who}");
+        if (!before.WebhookEnabled || string.IsNullOrEmpty(before.WebhookUrl)) return;
+        string? secret;
+        try { secret = await settings.GetWebhookSecretAsync(); }
+        catch (Exception ex) { logger.LogWarning("Alerta de alteração: segredo do webhook ilegível: {Error}", ex.Message); secret = null; }
+        var now = Clock.UtcNow();
+        var evt = new NotificationEvent("settings.changed", before.VpsName, "", "warning", 0, 0, 0, 0, now, now, [], $"{message} — por {who}");
+        var url = before.WebhookUrl;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(1));
+                await webhook.SendAsync(url, evt, secret, cts.Token);
+            }
+            catch (Exception ex) { logger.LogWarning("Alerta de alteração sensível não enviado: {Error}", ex.Message); }
+        });
     }
 
     // ---------------------------------------------------------------------- DTOs
