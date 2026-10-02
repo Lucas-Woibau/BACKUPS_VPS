@@ -29,7 +29,11 @@ if (args.Length > 0 && args[0] == "reset-admin-password")
     var userId = await resetDb.QueryOneAsync<long?>("SELECT id FROM users WHERE username = @username", new { username });
     if (userId is null)
     {
+        var existing = await resetDb.QueryAsync<string>("SELECT username FROM users ORDER BY id");
         Console.Error.WriteLine($"Usuário '{username}' não existe.");
+        Console.Error.WriteLine(existing.Count == 0
+            ? "Nenhum administrador cadastrado ainda: faça o primeiro acesso (token em /data/setup_token)."
+            : "Usuários existentes: " + string.Join(", ", existing));
         return 1;
     }
     await resetDb.ExecuteAsync("UPDATE users SET password_hash = @h WHERE id = @id", new { h = PasswordHasher.Hash(newPassword), id = userId });

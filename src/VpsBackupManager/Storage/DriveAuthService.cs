@@ -47,34 +47,31 @@ public sealed partial class DriveAuthService(
         {
             Stop();
             _expectedEmail = email;
-            _token = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var link = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            // {"scope":"drive.file"}: rclone only sees files it created (least privilege).
+            // 1st try: {"scope":"drive.file"} (rclone only sees files it created). Some rclone versions do not
+            // accept the config blob — then retry with the default scope.
             var configBlob = Convert.ToBase64String(Encoding.UTF8.GetBytes("{\"scope\":\"drive.file\"}"));
-            var psi = ProcessRunner.CreateStartInfo("rclone", ["authorize", "drive", configBlob, "--auth-no-open-browser"],
-                new Dictionary<string, string> { ["RCLONE_CONFIG"] = options.RcloneConfig });
-            _process = Process.Start(psi) ?? throw new StorageException("Falha ao iniciar rclone authorize.", false);
-            _process.StandardInput.Close();
-            _ = PumpAsync(_process.StandardOutput, link, _token);
-            _ = PumpAsync(_process.StandardError, link, _token);
+            var (localLink, output) = await LaunchAuthorizeAsync(["authorize", "drive", configBlob, "--auth-no-open-browser"], ct);
+            if (localLink is null)
+            {
+                logger.LogWarning("rclone authorize com escopo drive.file falhou: {Output}", output);
+                (localLink, output) = await LaunchAuthorizeAsync(["authorize", "drive", "--auth-no-open-browser"], ct);
+            }
+            if (localLink is null)
+            {
+                Stop();
+                throw new StorageException("rclone não iniciou a autorização: " + Security.Redactor.Truncate(output, 600), true);
+            }
 
             _expiry = new CancellationTokenSource(TimeSpan.FromMinutes(10));
             _expiry.Token.Register(Stop);
 
-            var localLink = await link.Task.WaitAsync(TimeSpan.FromSeconds(20), ct);
             var googleUrl = await ResolveGoogleUrlAsync(localLink, ct);
             googleUrl += (googleUrl.Contains('?') ? "&" : "?") + "login_hint=" + Uri.EscapeDataString(email);
             return new DriveConnectStart(googleUrl,
                 "Entre com a sua conta Google e clique em Permitir. No final o navegador mostrará uma página que não abre " +
                 "(endereço começando com http://127.0.0.1:53682). Copie esse endereço inteiro da barra do navegador e cole no painel.");
-        }
-        catch (TimeoutException)
-        {
-            Stop();
-            throw new StorageException("rclone não respondeu ao iniciar a autorização. Tente novamente.", true);
-        }
-        finally
+        }        finally
         {
             _gate.Release();
         }
@@ -142,6 +139,28 @@ public sealed partial class DriveAuthService(
         catch (JsonException) { return null; }
     }
 
+    /// <summary>Starts rclone authorize; returns the local auth link, or null plus the captured output on failure.</summary>
+    private async Task<(string? Link, string Output)> LaunchAuthorizeAsync(string[] args, CancellationToken ct)
+    {
+        Stop();
+        _token = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var link = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var output = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var psi = ProcessRunner.CreateStartInfo("rclone", args,
+            new Dictionary<string, string> { ["RCLONE_CONFIG"] = options.RcloneConfig });
+        _process = Process.Start(psi) ?? throw new StorageException("Falha ao iniciar rclone authorize.", false);
+        _process.StandardInput.Close();
+        var outTask = PumpAsync(_process.StandardOutput, link, _token, output);
+        var errTask = PumpAsync(_process.StandardError, link, _token, output);
+        var exited = Task.WhenAll(outTask, errTask, _process.WaitForExitAsync(ct));
+
+        var finished = await Task.WhenAny(link.Task, exited, Task.Delay(TimeSpan.FromSeconds(25), ct));
+        if (finished == link.Task) return (await link.Task, "");
+        var text = string.Join(" | ", output.Where(l => !string.IsNullOrWhiteSpace(l)).TakeLast(8));
+        Stop();
+        return (null, finished == exited ? (text.Length > 0 ? text : "processo terminou sem mensagem") : "tempo esgotado. Saída: " + text);
+    }
+
     private static async Task<string> ResolveGoogleUrlAsync(string localLink, CancellationToken ct)
     {
         using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(15) };
@@ -152,13 +171,15 @@ public sealed partial class DriveAuthService(
         return location;
     }
 
-    private static async Task PumpAsync(StreamReader reader, TaskCompletionSource<string> link, TaskCompletionSource<string> token)
+    private static async Task PumpAsync(StreamReader reader, TaskCompletionSource<string> link, TaskCompletionSource<string> token,
+        System.Collections.Concurrent.ConcurrentQueue<string> output)
     {
         try
         {
             string? line;
             while ((line = await reader.ReadLineAsync()) is not null)
             {
+                if (!line.Contains("access_token", StringComparison.Ordinal)) output.Enqueue(line);
                 var m = LocalAuthLink().Match(line);
                 if (m.Success) link.TrySetResult(m.Value);
                 var t = line.Trim();
