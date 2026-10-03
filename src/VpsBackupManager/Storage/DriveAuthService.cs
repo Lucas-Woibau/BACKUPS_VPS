@@ -238,14 +238,50 @@ public sealed partial class DriveAuthService(
             string? line;
             while ((line = await reader.ReadLineAsync()) is not null)
             {
-                if (!line.Contains("access_token", StringComparison.Ordinal)) output.Enqueue(line);
                 var m = LocalAuthLink().Match(line);
                 if (m.Success) link.TrySetResult(m.Value);
-                var t = line.Trim();
-                if (t.StartsWith('{') && t.Contains("\"access_token\"", StringComparison.Ordinal)) token.TrySetResult(t);
+                var tokenJson = TryExtractToken(line.Trim());
+                if (tokenJson is not null) token.TrySetResult(tokenJson);
+                else if (!line.Contains("access_token", StringComparison.Ordinal)) output.Enqueue(line);
             }
         }
         catch { /* process ended */ }
+    }
+
+    /// <summary>
+    /// rclone prints the token between "---&gt;" and "&lt;---End paste" either as raw JSON (old style) or, when
+    /// authorize received a config blob (new style), as base64 of {"token":"{...access_token...}"}.
+    /// </summary>
+    public static string? TryExtractToken(string line)
+    {
+        if (line.Length == 0) return null;
+        if (line.StartsWith('{')) return FromJson(line);
+        if (line.Length < 40 || !Base64Line().IsMatch(line)) return null;
+        try
+        {
+            var b64 = line.Replace('-', '+').Replace('_', '/');
+            b64 = b64.PadRight(b64.Length + (4 - b64.Length % 4) % 4, '=');
+            return FromJson(Encoding.UTF8.GetString(Convert.FromBase64String(b64)));
+        }
+        catch (FormatException) { return null; }
+
+        static string? FromJson(string json)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                if (root.ValueKind != JsonValueKind.Object) return null;
+                if (root.TryGetProperty("access_token", out _)) return JsonSerializer.Serialize(root);
+                if (root.TryGetProperty("token", out var t))
+                {
+                    if (t.ValueKind == JsonValueKind.String) return FromJson(t.GetString() ?? "");
+                    if (t.ValueKind == JsonValueKind.Object && t.TryGetProperty("access_token", out _)) return JsonSerializer.Serialize(t);
+                }
+                return null;
+            }
+            catch (JsonException) { return null; }
+        }
     }
 
     private void Stop()
@@ -259,6 +295,9 @@ public sealed partial class DriveAuthService(
 
     [GeneratedRegex(@"http://127\.0\.0\.1:53682/auth\?state=[A-Za-z0-9_\-]+")]
     private static partial Regex LocalAuthLink();
+
+    [GeneratedRegex(@"^[A-Za-z0-9+/_\-]+=*$")]
+    private static partial Regex Base64Line();
 
     [GeneratedRegex(@"^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$")]
     private static partial Regex EmailPattern();

@@ -132,3 +132,30 @@ public class DriveFolderAndRcloneConfigTests
         Assert.ThrowsAny<JsonException>(() => RcloneConfigFile.WriteDriveRemote(path, "gdrive", "{not json"));
     }
 }
+
+public class DriveTokenParsingTests
+{
+    private const string Token = "{\"access_token\":\"ya29.x\",\"token_type\":\"Bearer\",\"refresh_token\":\"1//r\",\"expiry\":\"2026-10-02T12:00:00Z\"}";
+
+    [Fact]
+    public void Raw_json_token_is_accepted() =>
+        Assert.Contains("ya29.x", DriveAuthService.TryExtractToken(Token));
+
+    [Fact]
+    public void Base64_config_blob_token_is_decoded()
+    {
+        var blob = JsonSerializer.Serialize(new Dictionary<string, string> { ["token"] = Token });
+        var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(blob)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var json = DriveAuthService.TryExtractToken(b64);
+        Assert.NotNull(json);
+        using var doc = JsonDocument.Parse(json!);
+        Assert.Equal("1//r", doc.RootElement.GetProperty("refresh_token").GetString());
+        Assert.DoesNotContain('\n', json!);
+    }
+
+    [Theory]
+    [InlineData("Paste the following into your remote machine --->")]
+    [InlineData("<---End paste")]
+    [InlineData("2026/10/02 NOTICE: Got code")]
+    public void Other_lines_are_ignored(string line) => Assert.Null(DriveAuthService.TryExtractToken(line));
+}
