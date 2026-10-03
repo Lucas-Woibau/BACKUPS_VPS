@@ -11,6 +11,56 @@ public static class HttpContextExtensions
     public static SessionInfo? Session(this HttpContext ctx) => ctx.Items["session"] as SessionInfo;
 
     public static string ClientIp(this HttpContext ctx) => ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+    /// <summary>True when the request came through the Tailscale sidecar (HTTPS on the tailnet).</summary>
+    public static bool ViaTailnet(this HttpContext ctx) => ctx.Items[TailnetGateMiddleware.ItemKey] is true;
+}
+
+/// <summary>
+/// Gate for the port served to the Tailscale sidecar (TAILNET_PORT). A request on that port is accepted only if:
+///  - it comes from the sidecar's fixed IP on the internal ts_net network (other containers cannot reach it), and
+///  - Tailscale-User-Login (set by `tailscale serve`, which overwrites client values) is an allowed login.
+/// Fail closed: if the feature is half-configured, the port refuses everything. Requests on other ports are untouched.
+/// The client's tailnet IP (X-Forwarded-For from the sidecar) becomes RemoteIpAddress so login throttling stays per device.
+/// </summary>
+public sealed class TailnetGateMiddleware(RequestDelegate next, Config.AppOptions options, ILogger<TailnetGateMiddleware> logger)
+{
+    public const string ItemKey = "via-tailnet";
+    public const string LoginHeader = "Tailscale-User-Login";
+
+    private readonly System.Net.IPAddress? _proxyIp =
+        System.Net.IPAddress.TryParse(options.TailnetProxyIp, out var ip) ? ip : null;
+
+    public async Task InvokeAsync(HttpContext ctx)
+    {
+        if (options.TailnetPort is not { } port || ctx.Connection.LocalPort != port)
+        {
+            await next(ctx);
+            return;
+        }
+
+        var remote = ctx.Connection.RemoteIpAddress;
+        if (remote is { IsIPv4MappedToIPv6: true }) remote = remote.MapToIPv4();
+        var login = ctx.Request.Headers[LoginHeader].ToString();
+        string? refusal =
+            _proxyIp is null || options.TailnetAllowedLogins.Count == 0 ? "acesso pelo Tailscale não configurado"
+            : remote is null || !remote.Equals(_proxyIp) ? $"origem {remote} não é o sidecar Tailscale"
+            : !options.TailnetAllowedLogins.Contains(login, StringComparer.OrdinalIgnoreCase) ? $"login Tailscale '{login}' não autorizado"
+            : null;
+        if (refusal is not null)
+        {
+            logger.LogWarning("Tailnet: requisição recusada ({Reason}) em {Path}", refusal, ctx.Request.Path);
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await ctx.Response.WriteAsJsonAsync(new { error = "Acesso negado." });
+            return;
+        }
+
+        var forwarded = ctx.Request.Headers["X-Forwarded-For"].ToString()
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault();
+        if (System.Net.IPAddress.TryParse(forwarded, out var client)) ctx.Connection.RemoteIpAddress = client;
+        ctx.Items[ItemKey] = true;
+        await next(ctx);
+    }
 }
 
 /// <summary>Security headers for every response. CSP forbids inline scripts/styles: all JS lives in /js.</summary>

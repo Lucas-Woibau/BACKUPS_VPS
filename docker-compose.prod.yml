@@ -17,6 +17,12 @@ services:
       DATA_DIR: /data
       BACKUP_ROOT: /backups
       RCLONE_CONFIG: /config/rclone/rclone.conf
+      # 8080: localhost da VPS (healthcheck/túnel SSH). 8081: somente para o sidecar Tailscale (rede ts_net).
+      ASPNETCORE_URLS: http://0.0.0.0:8080;http://0.0.0.0:8081
+      # Na 8081 o app aceita apenas requests vindos do IP fixo do sidecar e com Tailscale-User-Login permitido.
+      TAILNET_PORT: "8081"
+      TAILNET_PROXY_IP: 10.213.77.3
+      TAILNET_ALLOWED_LOGINS: lucaswoibau7@gmail.com
     # Somente localhost da VPS (a porta 8080 já é usada pelo bibliotrack_api).
     # Acesso: ssh -L 8095:127.0.0.1:8095 root@IP_DA_VPS  →  http://localhost:8095
     ports:
@@ -32,9 +38,11 @@ services:
       - ${MYSEEDS_BACKUP_DIR:?rode scripts/setup-vps.sh}:/mssql/myseeds
       - ${BIBLIOTRACK_BACKUP_DIR:?rode scripts/setup-vps.sh}:/mssql/bibliotrack
     networks:
-      - default
-      - myseeds_net
-      - bibliotrack_net
+      default: {}
+      myseeds_net: {}
+      bibliotrack_net: {}
+      ts_net:
+        ipv4_address: 10.213.77.2
     read_only: true
     tmpfs:
       - /tmp:size=256m,mode=1777
@@ -48,9 +56,56 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  # Acesso remoto pelo Tailscale: https://vps-backup.<tailnet>.ts.net (somente aparelhos da sua conta; nada é
+  # exposto na Internet). Sobe apenas quando o secret TS_AUTHKEY existe ou o nó já foi registrado (deploy.yml).
+  # Modo userspace: sem NET_ADMIN, sem /dev/net/tun. Veja docs/10-acesso-tailscale.md.
+  tailscale:
+    image: tailscale/tailscale:v1.102.5
+    container_name: vps_backup_tailscale
+    hostname: vps-backup
+    profiles: ["tailscale"]
+    restart: unless-stopped
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_AUTH_ONCE: "true"
+      TS_HOSTNAME: vps-backup
+      TS_EXTRA_ARGS: --advertise-tags=tag:vps-backup
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"
+      TS_ACCEPT_DNS: "false"
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      - tailscale_state:/var/lib/tailscale
+      - ./deploy/tailscale/serve.json:/config/serve.json:ro
+    networks:
+      default: {}
+      ts_net:
+        ipv4_address: 10.213.77.3
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  tailscale_state:
+
 # Redes dos projetos existentes (o app entra nelas para falar com myseeds_db / bibliotrack_db
 # pelo nome do container, sem publicar a porta 1433). Os outros projetos não são alterados.
 networks:
+  # Rede só entre o app e o sidecar Tailscale; internal = sem saída para a Internet, nenhum outro container entra.
+  ts_net:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.213.77.0/29
   myseeds_net:
     external: true
     name: ${MYSEEDS_NETWORK:?rode scripts/setup-vps.sh}

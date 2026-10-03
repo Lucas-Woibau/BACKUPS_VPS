@@ -25,6 +25,11 @@ public sealed class AppOptions
     public string DefaultTimezone { get; init; } = "America/Sao_Paulo";
     public string LogLevel { get; init; } = "Information";
 
+    /// <summary>Kestrel port reserved for the Tailscale sidecar (null = feature off). See TailnetGateMiddleware.</summary>
+    public int? TailnetPort { get; init; }
+    public string? TailnetProxyIp { get; init; }
+    public IReadOnlyList<string> TailnetAllowedLogins { get; init; } = [];
+
     public string DbPath => Path.Combine(DataDir, "app.db");
     public string WorkDir => Path.Combine(BackupRoot, "work");
     public string LocalCopiesDir => Path.Combine(BackupRoot, "local");
@@ -55,6 +60,10 @@ public sealed class AppOptions
             HostGateway = Env("HOST_GATEWAY_NAME", "host.docker.internal")!,
             DefaultTimezone = Env("TZ_DEFAULT", "America/Sao_Paulo")!,
             LogLevel = Env("LOG_LEVEL", "Information")!,
+            TailnetPort = Env("TAILNET_PORT", null) is null ? null : EnvInt("TAILNET_PORT", 0),
+            TailnetProxyIp = Env("TAILNET_PROXY_IP", null),
+            TailnetAllowedLogins = (Env("TAILNET_ALLOWED_LOGINS", "") ?? "")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
         };
     }
 

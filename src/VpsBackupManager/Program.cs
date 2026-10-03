@@ -116,6 +116,7 @@ try
     await app.Services.GetRequiredService<SetupTokenService>().EnsureAsync();
 
     if (options.TrustProxyHeaders) app.UseForwardedHeaders();
+    app.UseMiddleware<TailnetGateMiddleware>();
     app.UseMiddleware<SecurityHeadersMiddleware>();
     app.UseMiddleware<ErrorHandlingMiddleware>();
     app.UseMiddleware<AuthGateMiddleware>();
@@ -136,6 +137,10 @@ try
     if (options.SecretKey == AppOptions.DevOnlySecretKey && !app.Environment.IsDevelopment())
         Log.Error("APP_SECRET_KEY é a chave de DESENVOLVIMENTO publicada no repositório. Gere outra com 'openssl rand -base64 48' " +
                   "e recadastre as senhas das conexões.");
+
+    if (options.TailnetPort is not null)
+        Log.Information("Acesso Tailscale na porta {Port}: proxy {Proxy}, logins permitidos: {Logins}",
+            options.TailnetPort, options.TailnetProxyIp ?? "(não definido — porta recusa tudo)", string.Join(", ", options.TailnetAllowedLogins));
 
     Log.Information("VPS Backup Manager iniciado. Dados: {DataDir}, backups: {BackupRoot}", options.DataDir, options.BackupRoot);
     await app.RunAsync();

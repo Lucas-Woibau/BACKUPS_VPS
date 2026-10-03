@@ -123,7 +123,7 @@ public static partial class AuthEndpoints
         g.MapPost("/logout", async (HttpContext ctx, SessionService sessions, AppOptions options) =>
         {
             await sessions.DestroyAsync(ctx.Request.Cookies[SessionService.CookieName]);
-            ctx.Response.Cookies.Delete(SessionService.CookieName, CookieOptions(options));
+            ctx.Response.Cookies.Delete(SessionService.CookieName, CookieOptions(ctx, options));
             return Results.Ok(new { ok = true });
         });
 
@@ -141,10 +141,11 @@ public static partial class AuthEndpoints
         });
     }
 
-    private static CookieOptions CookieOptions(AppOptions options) => new()
+    private static CookieOptions CookieOptions(HttpContext ctx, AppOptions options) => new()
     {
         HttpOnly = true,
-        Secure = options.SessionCookieSecure,
+        // Through the tailnet the browser talks HTTPS to `tailscale serve`, so the cookie can always be Secure.
+        Secure = options.SessionCookieSecure || ctx.ViaTailnet(),
         SameSite = SameSiteMode.Strict,
         Path = "/",
         IsEssential = true,
@@ -152,7 +153,7 @@ public static partial class AuthEndpoints
 
     private static void SetCookie(HttpContext ctx, string token, AppOptions options)
     {
-        var o = CookieOptions(options);
+        var o = CookieOptions(ctx, options);
         o.MaxAge = TimeSpan.FromHours(options.SessionTtlHours);
         ctx.Response.Cookies.Append(SessionService.CookieName, token, o);
     }

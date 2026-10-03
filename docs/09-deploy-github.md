@@ -61,6 +61,9 @@ adicione as linhas equivalentes (`OUTRO_NETWORK`, `OUTRO_BACKUP_DIR`) em `docker
 
 ## 3. Acessar o painel
 
+**Recomendado:** pelo Tailscale, em `https://vps-backup.<seu-tailnet>.ts.net` — veja `docs/10-acesso-tailscale.md`.
+Alternativa (emergência) pelo túnel SSH:
+
 ```bash
 ssh -L 8095:127.0.0.1:8095 root@IP_DA_VPS
 ```

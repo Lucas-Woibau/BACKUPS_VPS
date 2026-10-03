@@ -9,6 +9,7 @@ on:
       - 'Dockerfile'
       - 'docker-compose.prod.yml'
       - 'scripts/**'
+      - 'deploy/tailscale/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
@@ -69,16 +70,20 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT }}
-          source: "docker-compose.prod.yml,.env.example,scripts/*.sh"
+          source: "docker-compose.prod.yml,.env.example,scripts/*.sh,deploy/tailscale/serve.json"
           target: ${{ secrets.VPS_PATH }}
 
       - name: Deploy on VPS
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262 # v1.0.3
+        env:
+          # One-off Tailscale auth key (only used to register the node the first time; never written to disk).
+          TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_SSH_PORT }}
+          envs: TS_AUTHKEY
           script: |
             cd ${{ secrets.VPS_PATH }}
             chmod +x scripts/*.sh
@@ -88,6 +93,12 @@ jobs:
             fi
             # Deploy the exact image built by this run (immutable tag) instead of the moving ":latest".
             export IMAGE_TAG=${{ github.sha }}
-            docker compose -f docker-compose.prod.yml pull app
-            docker compose -f docker-compose.prod.yml up -d app
+            # Tailscale sidecar: started only when an auth key was provided or the node is already registered
+            # (avoids an unauthenticated node printing a login URL in the logs).
+            SERVICES="app"
+            if [ -n "${TS_AUTHKEY:-}" ] || docker volume inspect vps-backup-manager_tailscale_state >/dev/null 2>&1; then
+              SERVICES="app tailscale"
+            fi
+            docker compose -f docker-compose.prod.yml pull $SERVICES
+            docker compose -f docker-compose.prod.yml up -d $SERVICES
             docker image prune -f
